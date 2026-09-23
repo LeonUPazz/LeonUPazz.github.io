@@ -1,0 +1,75 @@
+---
+// Linea del tempo dei filosofi, costruita dalle proprietà "Nascita" e "Morte" delle note
+interface Props { notes: any[]; }
+const { notes } = Astro.props;
+
+function year(v: any): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const s = String(v).toLowerCase();
+  const m = s.match(/(\d{1,4})/);
+  if (!m) return null;
+  const n = +m[1];
+  return /a\.?\s*c|bc|a\.c/.test(s) ? -n : n;
+}
+const prop = (fm: any, keys: string[]) => {
+  for (const k of Object.keys(fm ?? {})) if (keys.includes(k.toLowerCase())) return fm[k];
+};
+const rows = notes
+  .filter((n) => n.kind === "note")
+  .map((n) => {
+    const b = year(prop(n.frontmatter, ["nascita", "nato", "born"]));
+    const d = year(prop(n.frontmatter, ["morte", "morto", "died"]));
+    return b === null ? null : { n, b, d: d ?? b + 60, approx: d === null, rawB: prop(n.frontmatter, ["nascita"]), rawD: prop(n.frontmatter, ["morte"]) };
+  })
+  .filter(Boolean)
+  .sort((a: any, b: any) => a.b - b.b);
+
+const min = rows.length ? Math.floor(Math.min(...rows.map((r: any) => r.b)) / 50) * 50 : 0;
+const max = rows.length ? Math.ceil(Math.max(...rows.map((r: any) => r.d)) / 50) * 50 : 1;
+const span = max - min || 1;
+const pct = (y: number) => ((y - min) / span) * 100;
+const fmt = (y: number) => (y < 0 ? `${-y} a.C.` : `${y}`);
+const step = span > 1200 ? 200 : span > 500 ? 100 : 50;
+const ticks: number[] = [];
+for (let y = Math.ceil(min / step) * step; y <= max; y += step) ticks.push(y);
+---
+{rows.length > 1 && (
+  <section class="home-block">
+  <h2 class="block-title">Linea del tempo</h2>
+  <figure class="timeline" aria-label="Linea del tempo">
+    <div class="tl-axis">
+      {ticks.map((t, i) => <span class:list={[{ first: i === 0 && pct(t) < 4, last: i === ticks.length - 1 && pct(t) > 96 }]} style={`left:${pct(t)}%`}>{fmt(t)}</span>)}
+    </div>
+    <ol class="tl-rows">
+      {rows.map((r: any) => (
+        <li>
+          <a href={r.n.url} class="tl-bar" style={`left:${pct(r.b)}%;width:max(${pct(r.d) - pct(r.b)}%, 2.2rem)`}
+             title={`${r.n.title}: ${r.rawB ?? ""}${r.rawD ? " – " + r.rawD : ""}`}>
+            <span>{r.n.title}</span>
+          </a>
+        </li>
+      ))}
+    </ol>
+    <figcaption class="muted sans">Anni di nascita e morte presi dalle proprietà <code>Nascita</code> e <code>Morte</code> delle note (date spesso approssimative).</figcaption>
+  </figure>
+  </section>
+)}
+
+<style>
+  .timeline { margin: 0; overflow-x: auto; }
+  .tl-axis, .tl-rows { position: relative; min-width: 36rem; }
+  .tl-axis { height: 1.6rem; border-bottom: 1px solid var(--rule); font: 0.72rem var(--sans); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .tl-axis span { position: absolute; bottom: 0.35rem; transform: translateX(-50%); white-space: nowrap; }
+  .tl-axis span.first { transform: none; }
+  .tl-axis span.last { transform: translateX(-100%); }
+  .tl-rows { list-style: none; margin: 0; padding: 0.6rem 0 0; background:
+    repeating-linear-gradient(to right, transparent 0 calc(10% - 1px), color-mix(in srgb, var(--rule) 60%, transparent) calc(10% - 1px) 10%); }
+  .tl-rows li { position: relative; height: 1.85rem; }
+  .tl-bar { position: absolute; top: 0.2rem; height: 1.45rem; border-radius: 4px; background: var(--lapis-soft);
+    border-left: 3px solid var(--lapis); color: var(--ink); text-decoration: none; font: 500 0.78rem/1.45rem var(--sans);
+    padding: 0 0.5rem; white-space: nowrap; overflow: visible; }
+  .tl-bar span { position: relative; }
+  .tl-bar:hover { background: var(--lapis); color: var(--paper); }
+  figcaption { font-size: 0.78rem; margin-top: 0.75rem; }
+  figcaption code { font-size: 0.9em; }
+</style>

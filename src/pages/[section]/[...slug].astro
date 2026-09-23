@@ -1,0 +1,212 @@
+---
+import Base from "../../layouts/Base.astro";
+import Explorer from "../../components/Explorer.astro";
+import CanvasView from "../../components/CanvasView.astro";
+import Timeline from "../../components/Timeline.astro";
+import VaultScripts from "../../components/VaultScripts.astro";
+import { getVault, withBase, sections } from "../../lib/vault.mjs";
+import { graphData } from "../../lib/graph.mjs";
+import config from "../../../site.config.mjs";
+
+export function getStaticPaths() {
+  return sections.flatMap((s: any) =>
+    getVault(s.slug).notes.map((note: any) => ({ params: { section: s.slug, slug: note.slug || undefined }, props: { id: note.id } })),
+  );
+}
+
+const { section } = Astro.params;
+const vault = getVault(section);
+const sec = vault.section;
+const note = vault.byId.get(Astro.props.id);
+const isHome = note.isHome;
+const isCanvas = note.kind === "canvas";
+
+// Briciole di pane: Filosofia › Cartella › Sottocartella
+const crumbs: { label: string; href?: string }[] = [{ label: sec.title, href: withBase(`/${section}/`) }];
+if (!isHome) {
+  const parts = note.dir ? note.dir.split("/") : [];
+  const upto = note.isFolderNote ? parts.length - 1 : parts.length;
+  let acc = "";
+  for (let i = 0; i < upto; i++) {
+    acc = acc ? `${acc}/${parts[i]}` : parts[i];
+    const folderNote = vault.notes.find((n: any) => n.isFolderNote && n.dir === acc);
+    crumbs.push({ label: parts[i], href: folderNote?.url });
+  }
+}
+
+const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
+const headings = (note.headings ?? []).filter((h: any) => h.depth <= 4);
+const local = graphData(vault, note, 1);
+const sourceUrl = `${sec.repo}/blob/${sec.branch ?? "main"}/${note.id.split("/").map(encodeURIComponent).join("/")}`;
+const reportUrl = config.contact.email
+  ? `mailto:${config.contact.email}?subject=${encodeURIComponent(`[Appunti] ${note.title}`)}`
+  : `${sec.repo}/issues/new?title=${encodeURIComponent(`[${note.title}] `)}&body=${encodeURIComponent(`Pagina: ${Astro.url.href}\n\n`)}`;
+
+// Home della sezione: schede delle cartelle principali + ultimi aggiornamenti
+const sections = isHome ? vault.tree.children.map((f: any) => ({
+  name: f.name,
+  count: f.count,
+  url: f.folderNote?.url,
+  desc: f.folderNote?.excerpt || (f.folderNote?.text ?? ""),
+})) : [];
+const recent = isHome
+  ? [...vault.notes].filter((n: any) => !n.isHome && !n.isFolderNote).sort((a: any, b: any) => b.updated.localeCompare(a.updated)).slice(0, 8)
+  : [];
+const philosophers = isHome ? vault.notes : [];
+const desc = isHome ? (sec.intro ?? sec.title) : note.excerpt;
+---
+<Base title={isHome ? sec.title : note.title} description={desc} section={section}>
+  <div class="vault-layout" data-section={section}>
+    <Explorer section={section} currentId={note.id} />
+
+    <article class:list={["note-main", { wide: isCanvas || isHome }]}>
+      <button type="button" class="icon-btn explorer-toggle" id="explorer-toggle" aria-controls="explorer" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z"></path></svg>
+        Indice del vault
+      </button>
+
+      {!isHome && (
+        <nav class="crumbs" aria-label="Percorso">
+          {crumbs.map((c, i) => (
+            <>
+              {i > 0 && <span class="sep">/</span>}
+              {c.href ? <a href={c.href}>{c.label}</a> : <span>{c.label}</span>}
+            </>
+          ))}
+        </nav>
+      )}
+
+      <div class:list={[{ "note-column": !isCanvas && !isHome }]} data-pagefind-body={isHome ? undefined : ""}>
+        {isHome ? (
+          <header class="vault-hero">
+            <h1 class="note-title">{sec.title}</h1>
+            {sec.intro && <p class="lede">{sec.intro}</p>}
+          </header>
+        ) : (
+          <header>
+            <h1 class="note-title" data-pagefind-meta="title">{note.title}</h1>
+            <div class="note-meta">
+              {isCanvas && <span>Mappa</span>}
+              <span>Aggiornato il <time datetime={note.updated}>{fmtDate(note.updated)}</time></span>
+              {note.backlinks.length > 0 && <span>{note.backlinks.length} {note.backlinks.length === 1 ? "pagina collegata" : "pagine collegate"}</span>}
+            </div>
+          </header>
+        )}
+
+        {note.properties?.length > 0 && (
+          <dl class="props">
+            {note.properties.map((p: any) => (
+              <>
+                <dt>{p.key}</dt>
+                <dd>
+                  {p.values.map((v: any) =>
+                    v.href ? <a class="chip" href={v.href}>{v.text}</a>
+                    : v.missing ? <span class="chip missing" title="Nota non ancora scritta">{v.text}</span>
+                    : <span class:list={["chip", { tag: v.tag }]}>{v.text}</span>
+                  )}
+                </dd>
+              </>
+            ))}
+          </dl>
+        )}
+
+        {isHome && (
+          <>
+            <section class="home-block" aria-labelledby="h-sezioni">
+              <h2 id="h-sezioni" class="block-title">Sezioni</h2>
+              <ul class="section-grid">
+                {sections.map((s: any) => (
+                  <li>
+                    <a href={s.url ?? "#"}>
+                      <span class="s-name">{s.name}</span>
+                      <span class="s-count">{s.count} {s.count === 1 ? "nota" : "note"}</span>
+                      {s.desc && <span class="s-desc">{s.desc}</span>}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <Timeline notes={philosophers} />
+
+            <section class="home-block" aria-labelledby="h-recenti">
+              <h2 id="h-recenti" class="block-title">Aggiornati di recente</h2>
+              <ul class="entry-list">
+                {recent.map((n: any) => (
+                  <li>
+                    <a href={n.url}>
+                      <span class="t">{n.title}</span>
+                      <time class="date" datetime={n.updated}>{fmtDate(n.updated)}</time>
+                      {n.excerpt && <span class="d">{n.excerpt}</span>}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </>
+        )}
+
+        {isCanvas ? <CanvasView note={note} vault={vault} /> : (!isHome || sec.showHomeNote) && (
+          <div class:list={["prose", { "home-note": isHome }]} set:html={note.html} />
+        )}
+      </div>
+
+      {!isHome && (
+        <footer class="note-foot">
+          <span>Hai trovato un errore o vuoi aggiungere qualcosa? <a href={reportUrl}>Segnalalo</a></span>
+          <a href={sourceUrl}>Vedi il file originale</a>
+        </footer>
+      )}
+    </article>
+
+    {!isCanvas && !isHome && (
+      <aside class="rail" aria-label="Collegamenti">
+        {headings.length > 1 && (
+          <section class="toc-section">
+            <h2>In questa pagina</h2>
+            <ul class="toc">
+              {headings.map((h: any) => <li class={`d${Math.min(h.depth, 4) - Math.min(...headings.map((x: any) => x.depth)) + 1}`}><a href={`#${h.id}`}>{h.text}</a></li>)}
+            </ul>
+          </section>
+        )}
+        {note.backlinks.length > 0 && (
+          <section>
+            <h2>Citato in</h2>
+            <ul class="backlinks">
+              {note.backlinks.map((b: any) => (
+                <li><a href={b.url}>{b.isHome ? sec.title : b.title}<small>{b.dir || "Indice"}</small></a></li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {local.nodes.length > 1 && (
+          <section>
+            <h2>Grafo locale</h2>
+            <div class="graph-box">
+              <canvas data-graph={JSON.stringify(local)} data-mode="local" aria-label="Grafo dei collegamenti di questa nota"></canvas>
+              <a class="expand" href={withBase(`/${section}/grafo/`)}>Grafo completo</a>
+            </div>
+          </section>
+        )}
+      </aside>
+    )}
+  </div>
+  <VaultScripts />
+</Base>
+
+<style>
+  .note-main.wide { grid-column: 2 / -1; }
+  @media (max-width: 860px) { .note-main.wide { grid-column: 1; } }
+  .vault-hero { max-width: 44rem; margin-bottom: 2.5rem; }
+  .vault-hero .note-title { font-size: clamp(2.6rem, 7vw, 4.2rem); margin-top: 0.6rem; }
+  .lede { font-size: 1.2rem; color: var(--ink-2); margin: 0; line-height: 1.55; }
+  .section-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.75rem; }
+  .section-grid a { display: flex; flex-direction: column; gap: 0.25rem; height: 100%; padding: 1rem 1.1rem; border: 1px solid var(--rule);
+    border-radius: 8px; background: var(--card); text-decoration: none; color: var(--ink); transition: border-color 0.15s, transform 0.15s; }
+  .section-grid a:hover { border-color: var(--lapis); transform: translateY(-1px); }
+  .s-name { font-weight: 650; font-size: 1.15rem; }
+  .s-count { font: 0.75rem var(--sans); color: var(--ochre); font-variant-numeric: tabular-nums; }
+  .s-desc { font-size: 0.88rem; color: var(--ink-2); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .home-note { max-width: var(--measure); }
+</style>
+

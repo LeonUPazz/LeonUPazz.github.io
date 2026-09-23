@@ -1,0 +1,37 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getVault, withBase, sections } from "../../lib/vault.mjs";
+import { graphData } from "../../lib/graph.mjs";
+export function getStaticPaths() {
+  return sections.map((s) => ({ params: { section: s.slug } }));
+}
+const { section } = Astro.params;
+const vault = getVault(section);
+const title = vault.section.title;
+const data = graphData(vault);
+const groups = [...new Set(data.nodes.map((n) => n.group))];
+---
+<Base title={`Grafo · ${title}`} section={section} description={`Tutte le note di ${title} e i loro collegamenti.`}>
+  <div class="page">
+    <nav class="crumbs"><a href={withBase(`/${section}/`)}>{title}</a><span class="sep">/</span><span>Grafo</span></nav>
+    <h1 class="note-title">Grafo · {title}</h1>
+    <p class="muted sans" style="margin-top:0">
+      {data.nodes.length} note e {data.links.length} collegamenti. Trascina per esplorare, usa la rotella per lo zoom, clicca un nodo per aprire la nota.
+    </p>
+    <div class="graph-box big">
+      <canvas data-graph={JSON.stringify(data)} data-mode="global" aria-label="Grafo di tutte le note"></canvas>
+    </div>
+    <p class="legend sans">{groups.map((g, i) => <span><i data-i={i}></i>{g}</span>)}</p>
+  </div>
+</Base>
+<style>
+  .big { aspect-ratio: auto; height: min(75vh, 48rem); margin-top: 1.5rem; }
+  .legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.8rem; color: var(--ink-2); margin-top: 1rem; }
+  .legend i { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.4rem; background: var(--c); }
+  .legend i[data-i="0"] { --c: #2c46a0; } .legend i[data-i="1"] { --c: #9a7424; } .legend i[data-i="2"] { --c: #3f7d5a; }
+  .legend i[data-i="3"] { --c: #a1463d; } .legend i[data-i="4"] { --c: #6b4fa0; } .legend i[data-i="5"] { --c: #2f7f8f; }
+  .legend i[data-i="6"] { --c: #8a5a2b; } .legend i[data-i="7"] { --c: #5f6b7a; }
+</style>
+<script>
+  import "../../scripts/graph.js";
+</script>

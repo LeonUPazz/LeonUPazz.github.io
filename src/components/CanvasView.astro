@@ -1,0 +1,180 @@
+---
+// Rende un file .canvas di Obsidian come mappa navigabile (trascina e zoom)
+import { renderMarkdown } from "../lib/markdown.mjs";
+import { IMAGE_EXT } from "../lib/vault.mjs";
+
+interface Props { note: any; vault: any; }
+const { note, vault } = Astro.props;
+const { nodes = [], edges = [] } = note.canvas;
+
+const PAD = 60;
+const minX = Math.min(0, ...nodes.map((n: any) => n.x)) - PAD;
+const minY = Math.min(0, ...nodes.map((n: any) => n.y)) - PAD;
+const maxX = Math.max(0, ...nodes.map((n: any) => n.x + n.width)) + PAD;
+const maxY = Math.max(0, ...nodes.map((n: any) => n.y + n.height)) + PAD;
+const W = maxX - minX, H = maxY - minY;
+
+const PRESET: Record<string, string> = { "1": "#c0453a", "2": "#c9792b", "3": "#b89a1d", "4": "#3f8a57", "5": "#2f8aa0", "6": "#6b4fa0" };
+const color = (c?: string) => (c ? PRESET[c] ?? c : null);
+
+const items = nodes.map((n: any) => {
+  const style = `left:${n.x - minX}px;top:${n.y - minY}px;width:${n.width}px;height:${n.height}px;${color(n.color) ? `--node:${color(n.color)};` : ""}`;
+  if (n.type === "group") return { kind: "group", style, label: n.label ?? "", z: 0 };
+  if (n.type === "text") return { kind: "text", style, html: renderMarkdown(n.text ?? "", { vault, note }).html, z: 1 };
+  if (n.type === "link") return { kind: "link", style, url: n.url, z: 1 };
+  if (n.type === "file") {
+    const t = vault.resolve(n.file, note.dir);
+    if (!t) return { kind: "missing", style, label: n.file.split("/").pop(), z: 1 };
+    if (!t.kind && IMAGE_EXT.has(t.ext)) return { kind: "image", style, url: t.url, label: t.name, z: 1 };
+    if (!t.kind) return { kind: "link", style, url: t.url, label: t.name, z: 1 };
+    const inner = n.subpath && t.kind === "note"
+      ? renderMarkdown(t.body, { vault, note: t, section: n.subpath.replace(/^#/, "") }).html
+      : t.html ?? `<p>${t.excerpt}</p>`;
+    return { kind: "file", style, note: t, html: inner, z: 1 };
+  }
+  return null;
+}).filter(Boolean).sort((a: any, b: any) => a.z - b.z);
+
+// Archi: punto di ancoraggio sul lato indicato (o il più vicino)
+const byId = new Map(nodes.map((n: any) => [n.id, n]));
+function anchor(n: any, side: string) {
+  const cx = n.x + n.width / 2 - minX, cy = n.y + n.height / 2 - minY;
+  switch (side) {
+    case "top": return [cx, n.y - minY];
+    case "bottom": return [cx, n.y + n.height - minY];
+    case "left": return [n.x - minX, cy];
+    default: return [n.x + n.width - minX, cy];
+  }
+}
+function autoSide(a: any, b: any) {
+  const dx = (b.x + b.width / 2) - (a.x + a.width / 2), dy = (b.y + b.height / 2) - (a.y + a.height / 2);
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "bottom" : "top");
+}
+const dir: Record<string, number[]> = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] };
+const paths = edges.map((e: any) => {
+  const a = byId.get(e.fromNode), b = byId.get(e.toNode);
+  if (!a || !b) return null;
+  const fs = e.fromSide ?? autoSide(a, b), ts = e.toSide ?? autoSide(b, a);
+  const [x1, y1] = anchor(a, fs), [x2, y2] = anchor(b, ts);
+  const k = Math.max(40, Math.hypot(x2 - x1, y2 - y1) * 0.4);
+  const d = `M${x1},${y1} C${x1 + dir[fs][0] * k},${y1 + dir[fs][1] * k} ${x2 + dir[ts][0] * k},${y2 + dir[ts][1] * k} ${x2},${y2}`;
+  return { d, label: e.label, mx: (x1 + x2) / 2, my: (y1 + y2) / 2, end: e.toEnd !== "none", start: e.fromEnd === "arrow", color: color(e.color) };
+}).filter(Boolean);
+---
+<div class="cv" data-w={W} data-h={H}>
+  <div class="cv-tools">
+    <button type="button" class="icon-btn" data-zoom="in" aria-label="Ingrandisci">+</button>
+    <button type="button" class="icon-btn" data-zoom="out" aria-label="Riduci">−</button>
+    <button type="button" class="icon-btn" data-zoom="fit">Adatta</button>
+  </div>
+  <div class="cv-viewport">
+    <div class="cv-stage" style={`width:${W}px;height:${H}px`}>
+      <svg class="cv-edges" width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+        <defs>
+          <marker id="cv-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+          </marker>
+        </defs>
+        {paths.map((p: any) => (
+          <g>
+            <path d={p.d} fill="none" stroke={p.color ?? "var(--ink-3)"} stroke-width="2.5"
+              marker-end={p.end ? "url(#cv-arrow)" : undefined} marker-start={p.start ? "url(#cv-arrow)" : undefined}></path>
+            {p.label && <text x={p.mx} y={p.my} text-anchor="middle" class="cv-edge-label">{p.label}</text>}
+          </g>
+        ))}
+      </svg>
+      {items.map((it: any) => {
+        if (it.kind === "group") return <div class="cv-group" style={it.style}><span class="cv-group-label">{it.label}</span></div>;
+        if (it.kind === "text") return <div class="cv-node cv-text" style={it.style}><div class="prose" set:html={it.html} /></div>;
+        if (it.kind === "image") return <div class="cv-node cv-image" style={it.style}><img src={it.url} alt={it.label} loading="lazy" /></div>;
+        if (it.kind === "link") return <a class="cv-node cv-link" style={it.style} href={it.url}>{it.label ?? it.url}</a>;
+        if (it.kind === "missing") return <div class="cv-node cv-text" style={it.style}><span class="unresolved">{it.label}</span></div>;
+        return (
+          <div class="cv-node cv-file" style={it.style}>
+            <a class="cv-file-title" href={it.note.url}>{it.note.title}</a>
+            <div class="prose" set:html={it.html} />
+          </div>
+        );
+      })}
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  .cv { position: relative; border: 1px solid var(--rule); border-radius: 10px; background:
+    radial-gradient(circle, var(--rule) 1px, transparent 1.2px) 0 0 / 22px 22px, var(--paper-2); overflow: hidden; }
+  .cv-viewport { height: min(78vh, 52rem); overflow: hidden; cursor: grab; touch-action: none; }
+  .cv-viewport.grabbing { cursor: grabbing; }
+  .cv-stage { position: relative; transform-origin: 0 0; }
+  .cv-tools { position: absolute; z-index: 5; right: 0.6rem; top: 0.6rem; display: flex; gap: 0.3rem; }
+  .cv-edges { position: absolute; inset: 0; overflow: visible; }
+  .cv-edge-label { font: 600 18px var(--sans); fill: var(--ink-2); paint-order: stroke; stroke: var(--paper-2); stroke-width: 6px; }
+  .cv-group { position: absolute; border: 2px solid color-mix(in srgb, var(--node, var(--ink-3)) 55%, transparent);
+    background: color-mix(in srgb, var(--node, var(--ink-3)) 7%, transparent); border-radius: 14px; }
+  .cv-group-label { position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; font: 600 26px var(--sans); color: var(--ink-2); white-space: nowrap; }
+  .cv-node { position: absolute; background: var(--card); border: 2px solid var(--node, var(--rule)); border-radius: 10px;
+    overflow: auto; padding: 18px 22px; font-size: 17px; line-height: 1.55; box-shadow: var(--shadow); cursor: auto; }
+  .cv-node .prose h1 { font-size: 22px; margin-top: 18px; }
+  .cv-file-title { display: block; font: 650 24px/1.2 var(--serif); color: var(--ink); text-decoration: none; margin-bottom: 12px; }
+  .cv-file-title:hover { color: var(--lapis); text-decoration: underline; }
+  .cv-image { padding: 0; } .cv-image img { width: 100%; height: 100%; object-fit: contain; }
+  .cv-link { display: flex; align-items: center; justify-content: center; font: 600 18px var(--sans); }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>(".cv").forEach((root) => {
+    const vp = root.querySelector<HTMLElement>(".cv-viewport")!;
+    const stage = root.querySelector<HTMLElement>(".cv-stage")!;
+    const W = +root.dataset.w!, H = +root.dataset.h!;
+    let s = 1, x = 0, y = 0;
+    const apply = () => (stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`);
+    const fit = () => {
+      const r = vp.getBoundingClientRect();
+      s = Math.min(r.width / W, r.height / H);
+      x = (r.width - W * s) / 2; y = (r.height - H * s) / 2;
+      apply();
+    };
+    const zoomAt = (f: number, cx: number, cy: number) => {
+      const ns = Math.min(3, Math.max(0.05, s * f));
+      x = cx - ((cx - x) * ns) / s; y = cy - ((cy - y) * ns) / s; s = ns; apply();
+    };
+    root.querySelectorAll<HTMLButtonElement>("[data-zoom]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const r = vp.getBoundingClientRect();
+        if (b.dataset.zoom === "fit") fit();
+        else zoomAt(b.dataset.zoom === "in" ? 1.25 : 0.8, r.width / 2, r.height / 2);
+      }),
+    );
+    vp.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const r = vp.getBoundingClientRect();
+      if (e.ctrlKey || e.metaKey || Math.abs(e.deltaY) > 0 && !e.shiftKey && Math.abs(e.deltaX) < 1) {
+        zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
+      } else { x -= e.deltaX; y -= e.deltaY; apply(); }
+    }, { passive: false });
+    // trascinamento (mouse e dita; due dita = zoom)
+    const pts = new Map<number, [number, number]>();
+    let last: [number, number] | null = null, lastDist = 0;
+    vp.addEventListener("pointerdown", (e) => {
+      if ((e.target as HTMLElement).closest("a, .cv-node .prose")) return;
+      vp.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
+      last = [e.clientX, e.clientY]; vp.classList.add("grabbing");
+    });
+    vp.addEventListener("pointermove", (e) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        const r = vp.getBoundingClientRect();
+        if (lastDist) zoomAt(d / lastDist, (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top);
+        lastDist = d; return;
+      }
+      if (last) { x += e.clientX - last[0]; y += e.clientY - last[1]; last = [e.clientX, e.clientY]; apply(); }
+    });
+    const end = (e: PointerEvent) => { pts.delete(e.pointerId); lastDist = 0; if (!pts.size) { last = null; vp.classList.remove("grabbing"); } };
+    vp.addEventListener("pointerup", end); vp.addEventListener("pointercancel", end);
+    fit();
+    new ResizeObserver(fit).observe(vp);
+  });
+</script>

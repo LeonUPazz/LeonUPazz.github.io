@@ -1,0 +1,11 @@
+---
+import Base from "../layouts/Base.astro";
+import { withBase } from "../lib/vault.mjs";
+---
+<Base title="Pagina non trovata">
+  <div class="page-narrow">
+    <p class="eyebrow">404 · ἀπορία</p>
+    <h1 class="note-title">Questa pagina non esiste (ancora).</h1>
+    <p>Forse la nota è stata rinominata o spostata. Prova con la ricerca, oppure riparti dalla <a href={withBase("/")}>pagina iniziale</a>.</p>
+  </div>
+</Base>

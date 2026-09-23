@@ -1,0 +1,29 @@
+---
+// Nodo ricorsivo dell'albero delle cartelle del vault
+interface Props { node: any; currentId?: string; }
+const { node, currentId } = Astro.props;
+const contains = (n: any): boolean =>
+  n.folderNote?.id === currentId || n.notes.some((x: any) => x.id === currentId) || n.children.some(contains);
+---
+<ul>
+  {node.children.map((f: any) => (
+    <li>
+      <details open={contains(f) || undefined}>
+        <summary>
+          {f.folderNote
+            ? <a href={f.folderNote.url} aria-current={f.folderNote.id === currentId ? "page" : undefined}>{f.name}</a>
+            : <span>{f.name}</span>}
+          <span class="count">{f.count}</span>
+        </summary>
+        <Astro.self node={f} currentId={currentId} />
+      </details>
+    </li>
+  ))}
+  {node.notes.map((n: any) => (
+    <li>
+      <a href={n.url} aria-current={n.id === currentId ? "page" : undefined}>
+        {n.title}{n.kind === "canvas" && <span class="canvas-icon" title="Mappa"> ◇</span>}
+      </a>
+    </li>
+  ))}
+</ul>

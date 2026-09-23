@@ -1,0 +1,23 @@
+# ⚠️ Questo file va copiato nella repo del VAULT (Filosofia), in .github/workflows/aggiorna-sito.yml
+# A ogni push sul vault avvisa la repo del sito, che si ricostruisce da sola.
+# Richiede il secret SITE_DISPATCH_TOKEN (vedi README del sito).
+name: Aggiorna il sito
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Avvisa la repo del sito
+        env:
+          TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          SITE_REPO: LeonUPazz/LeonUPazz.github.io # ← cambia se la repo del sito ha un altro nome
+        run: |
+          curl -sSf -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/repos/$SITE_REPO/dispatches \
+            -d '{"event_type":"vault-aggiornato"}'

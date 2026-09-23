@@ -1,0 +1,141 @@
+---
+import "katex/dist/katex.min.css";
+import "../styles/global.css";
+import config from "../../site.config.mjs";
+
+interface Props {
+  title?: string;
+  description?: string;
+  section?: string; // sezione attiva nel menu, es. "filosofia"
+}
+const { title, description = config.description, section } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const fullTitle = title ? `${title} · ${config.title}` : config.title;
+const nav = config.sections.map((s) => ({ label: s.title, href: `/${s.slug}/`, slug: s.slug }));
+const canonical = new URL(Astro.url.pathname, Astro.site ?? config.site).href;
+---
+<!doctype html>
+<html lang={config.lang} data-base={base}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={title ?? config.title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <script is:inline>
+      // Applica il tema salvato prima del primo disegno (niente lampi di bianco)
+      try {
+        const t = localStorage.getItem("theme");
+        if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#contenuto">Vai al contenuto</a>
+    <header class="site-header">
+      <a class="brand" href={`${base}/`}>{config.title}<span>.</span></a>
+      <nav class="site-nav" id="site-nav" aria-label="Sezioni">
+        {nav.map((item) => (
+          <a href={base + item.href} aria-current={section === item.slug ? "page" : undefined}>{item.label}</a>
+        ))}
+      </nav>
+      <div class="header-actions">
+        <button class="icon-btn" id="open-search" type="button" aria-label="Cerca">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <span class="label">Cerca</span><kbd>/</kbd>
+        </button>
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Cambia tema chiaro/scuro">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"></path></svg>
+        </button>
+        <button class="icon-btn menu-btn" id="menu-toggle" type="button" aria-label="Menu" aria-controls="site-nav" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="contenuto">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>© {new Date().getFullYear()} {config.author} · Appunti liberi e gratuiti, <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.it" rel="license">CC BY-NC-SA 4.0</a></span>
+        <span>
+          {nav.map((item, i) => (<>{i > 0 && " · "}<a href={base + item.href}>{item.label}</a></>))}
+          {config.contact.github && <> · <a href={config.contact.github}>GitHub</a></>}
+        </span>
+      </div>
+    </footer>
+
+    <dialog class="search-dialog" id="search-dialog" aria-label="Cerca nel sito">
+      <div class="search-head">
+        <span class="eyebrow">Cerca negli appunti</span>
+        <button class="icon-btn" type="button" id="close-search">Chiudi <kbd>Esc</kbd></button>
+      </div>
+      <div id="search"></div>
+    </dialog>
+
+    <script is:inline>
+      const base = document.documentElement.dataset.base;
+      // ── tema ──
+      document.getElementById("theme-toggle").addEventListener("click", () => {
+        const root = document.documentElement;
+        const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        root.dataset.theme = dark ? "light" : "dark";
+        try { localStorage.setItem("theme", root.dataset.theme); } catch {}
+        window.dispatchEvent(new Event("themechange"));
+      });
+      // ── menu mobile ──
+      const menuBtn = document.getElementById("menu-toggle");
+      menuBtn.addEventListener("click", () => {
+        const nav = document.getElementById("site-nav");
+        const open = nav.classList.toggle("open");
+        menuBtn.setAttribute("aria-expanded", String(open));
+      });
+      // ── ricerca (Pagefind, caricato solo quando serve) ──
+      const dialog = document.getElementById("search-dialog");
+      let loaded = false;
+      async function openSearch() {
+        dialog.showModal();
+        if (!loaded) {
+          loaded = true;
+          try {
+            const css = document.createElement("link");
+            css.rel = "stylesheet"; css.href = base + "/pagefind/pagefind-ui.css";
+            document.head.append(css);
+            await new Promise((ok, ko) => {
+              const s = document.createElement("script");
+              s.src = base + "/pagefind/pagefind-ui.js"; s.onload = ok; s.onerror = ko;
+              document.head.append(s);
+            });
+            // data-static="1" solo nell'anteprima senza server (link a index.html espliciti)
+            const fix = (u) => document.documentElement.dataset.static === "1"
+              ? base + u.replace(/\/(#|$)/, "/index.html$1") : u;
+            new PagefindUI({
+              element: "#search", bundlePath: base + "/pagefind/", showSubResults: true, showImages: false,
+              resetStyles: false, autofocus: true,
+              processResult: (r) => { r.url = fix(r.url); r.sub_results?.forEach((s) => (s.url = fix(s.url))); return r; },
+            });
+          } catch {
+            document.getElementById("search").innerHTML =
+              '<p class="no-index">La ricerca è disponibile nel sito pubblicato (l\'indice viene creato da <code>npm run build</code>).</p>';
+          }
+        }
+        setTimeout(() => dialog.querySelector("input")?.focus(), 50);
+      }
+      document.getElementById("open-search").addEventListener("click", openSearch);
+      document.getElementById("close-search").addEventListener("click", () => dialog.close());
+      dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+      document.addEventListener("keydown", (e) => {
+        const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+        if ((e.key === "/" && !typing) || (e.key === "k" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); openSearch(); }
+      });
+    </script>
+  </body>
+</html>

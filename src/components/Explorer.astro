@@ -1,0 +1,14 @@
+---
+import Tree from "./Tree.astro";
+import { getVault, withBase } from "../lib/vault.mjs";
+interface Props { section: string; currentId?: string; }
+const { section, currentId } = Astro.props;
+const vault = getVault(section);
+---
+<nav class="explorer" id="explorer" aria-label="Indice del vault">
+  <a class="tree-title" href={withBase(`/${section}/`)}>{vault.section.title}</a>
+  <div class="tree">
+    <Tree node={vault.tree} currentId={currentId} />
+  </div>
+  <p style="margin-top:1.5rem"><a href={withBase(`/${section}/grafo/`)} class="tree-title" style="display:inline">Grafo del vault →</a></p>
+</nav>

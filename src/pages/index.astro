@@ -1,0 +1,62 @@
+---
+// Home: per ogni sezione (vault) il titolo, qualche numero e le note aggiornate di recente
+import Base from "../layouts/Base.astro";
+import { getVault, withBase, sections } from "../lib/vault.mjs";
+
+const fmt = (d: string) => new Date(d).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" });
+// Con più sezioni mostro meno note per ciascuna, per non allungare troppo la pagina
+const perSection = sections.length > 1 ? 5 : 10;
+
+const blocks = sections.map((s: any) => {
+  const vault = getVault(s.slug);
+  const notes = vault.notes.filter((n: any) => !n.isHome);
+  return {
+    s,
+    count: notes.length,
+    lastUpdate: notes.map((n: any) => n.updated).sort().at(-1),
+    recent: [...notes].filter((n: any) => !n.isFolderNote).sort((a: any, b: any) => b.updated.localeCompare(a.updated)).slice(0, perSection),
+  };
+});
+---
+<Base>
+  <div class="page home">
+    {blocks.map(({ s, count, lastUpdate, recent }) => (
+      <section class="block">
+        <div class="block-head">
+          <h2 class="sec-title"><a href={withBase(`/${s.slug}/`)}>{s.title}</a></h2>
+          <p class="stats sans">
+            <span><b>{count}</b> note</span>
+            {lastUpdate && <span>aggiornato il <b>{fmt(lastUpdate)}</b></span>}
+          </p>
+        </div>
+        <h3 class="block-title">Note più recenti</h3>
+        <ul class="entry-list">
+          {recent.map((n: any) => (
+            <li>
+              <a href={n.url}>
+                <span class="t">{n.title}<small class="where">{n.dir.split("/").slice(-1)[0]}</small></span>
+                <time class="date" datetime={n.updated}>{fmt(n.updated)}</time>
+                {n.excerpt && <span class="d">{n.excerpt}</span>}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <p class="more sans"><a href={withBase(`/${s.slug}/`)}>Tutte le note di {s.title} →</a></p>
+      </section>
+    ))}
+  </div>
+</Base>
+
+<style>
+  .home { max-width: 52rem; }
+  .block { padding-block: 1rem 3rem; }
+  .block-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1.5rem;
+    padding-bottom: 1.25rem; border-bottom: 2px solid var(--ink); margin-bottom: 2rem; }
+  .sec-title { margin: 0; font-size: clamp(2.4rem, 6vw, 3.4rem); letter-spacing: -0.025em; font-variation-settings: "opsz" 72; }
+  .sec-title a { color: var(--ink); text-decoration: none; }
+  .sec-title a:hover { color: var(--lapis); }
+  .stats { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin: 0; font-size: 0.85rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .stats b { color: var(--ochre); font-weight: 600; }
+  .where { display: inline-block; margin-left: 0.6rem; font: 400 0.75rem var(--sans); color: var(--ink-3); }
+  .more { margin: 1.25rem 0 0; font-size: 0.9rem; }
+</style>
